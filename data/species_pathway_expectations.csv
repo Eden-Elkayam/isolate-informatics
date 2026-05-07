@@ -1,0 +1,17 @@
+species,pathway,note,ref
+Synechococcus_elongatus,oxygen reduction,cyanobacteria,
+Synechococcus_elongatus,CBB,cyanobacteria,
+Prochlorococcus_D_marinus_B,oxygen reduction,cyanobacteria,
+Prochlorococcus_D_marinus_B,CBB,cyanobacteria,
+Nitrosopumilus_maritimus,3HP/4HB,,
+Methylobacterium_extorquens,Serine Cycle,,
+Cupriavidus_necator,H2 oxidation,,
+Cupriavidus_necator,formate oxidation,,
+Cupriavidus_necator,CBB,,
+Cupriavidus_necator,nitrate reduction,,
+Cupriavidus_necator,oxygen reduction,,
+Halothiobacillus_neapolitanus_B,sulfide oxidation,,
+Halothiobacillus_neapolitanus_B,CBB,thiosulphate oxidation -- should add to pathways,
+Bacillus_Z_methanolicus,methanol oxidation,,Yang et al. Trends in Biotech. 2025
+Bacillus_Z_methanolicus,RuMP,,Yang et al. Trends in Biotech. 2025
+Desulfovibrio_desulfuricans_B,Reductive Glycine Pathway,,Snachez-Andrea Nat. Comms 2020

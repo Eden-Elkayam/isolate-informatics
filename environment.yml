@@ -1,0 +1,10 @@
+name: isolate_informatics
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - kofamscan
+  - pip
+  - pip:
+    - sourmash

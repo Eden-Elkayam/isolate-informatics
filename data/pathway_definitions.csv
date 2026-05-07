@@ -1,0 +1,22 @@
+pathway,functional_category,expression,meaning,notes
+CBB,carbon fixation,(K00855 AND K01601 AND K01783),phosphoribulokinase AND RubisCO large subunit AND ribulose-phosphate 3-epimerase,
+rTCA,carbon fixation,((K15230 AND K15231) OR ((K15233 AND K15232) AND K15234)),ATP-citrate lyase (both subunits) OR (citryl-CoA synthetase both subunits AND citryl-CoA lyase),
+WL,carbon fixation,((K00198 AND K14138) OR ((K00192 AND K00195) AND (K00193 AND K00194 AND K00197))),(bacterial WL: CODH catalytic subunit AND acetyl-CoA synthase) OR (archaeal CODH AND ACS),
+3HP,carbon fixation,(K14468 AND (K14471 AND K14472)),malonyl-CoA reductase AND succinyl-CoA:L-malate CoA-transferase (both subunits),
+3HP/4HB,carbon fixation,((K15017 OR (K18603 AND K18605 AND K18604)) AND (K15039 OR K18602) AND K14534),(malonyl-CoA reductase OR acetyl-CoA carboxylase complex) AND (3-hydroxypropionate dehydrogenase OR malonic semialdehyde reductase) AND 4-hydroxybutanoyl-CoA dehydratase,
+DC/4HB,carbon fixation,(K01595 AND (K01676 OR K01677 OR K01678) AND (K18861 OR K14467) AND K14534),phosphoenolpyruvate carboxylase AND (any fumarate hydratase type) AND (any 4-hydroxybutyrate-CoA ligase type) AND 4-hydroxybutanoyl-CoA dehydratase,
+H2 oxidation,electron donor,(K18016 OR K18005 OR K06281 OR K00436),(hydrogenase_large_membrane OR hydrogenase_large_NiFe OR hoxG_large OR hoxH_large),
+sulfide oxidation,electron donor,(K17218),SQR,
+sulfite oxidation,electron donor,(K21307),SoeA sulfite dehydrogenase,
+CO oxidation,electron donor,(K03520),aerobic CO dehydrogenase (coxL),
+ammonia oxidation,electron donor,(K28504),AMO,
+formate oxidation,electron donor,(K08348 OR K00123 OR K00122 OR K00533 OR K00532),formate dehydrogenase: (fdnG OR fdhF/fdoG OR fdh OR fd_h2ase_large OR fd_h2ase),
+methanol oxidation,electron donor,(K14028 OR K00093),(mxaF OR meoh_dehydrogenase),
+oxygen reduction,electron acceptor,(K02274 OR K00404 OR K02297 OR K00426),(coxA OR ccoN OR cyoA OR cydB),
+nitrate reduction,electron acceptor,(K00370),NarG/NxrA family,This KO alone does not tell direction
+thiosulfate reduction,electron acceptor,(K08352 OR K08353),(phsA/psrA OR phsB),
+N2 fixation,nitrogen source,(K02588 AND K02586 AND K02591),(nifH AND nifD AND nifK),
+Serine Cycle,carbon fixation,(K00605 AND K08691 AND K01595),(glyA AND mcl AND ppc),
+Reductive Glycine Pathway,carbon fixation,(K01938 AND K01491 AND K00297 AND K00605),(fhs AND folD AND metF AND glyA),
+RuMP,carbon fixation,(K08093 OR K13812 OR K13831) AND (K08094 OR K13831),"HPS(HPS  OR  Fae–HPS  OR  bifunctional HPS/PHI) AND (PHI  OR  bifunctional HPS/PHI)
+",

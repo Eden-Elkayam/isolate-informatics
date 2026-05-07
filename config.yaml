@@ -1,0 +1,53 @@
+# =============================================================================
+# isolate-genome-pipeline — run configuration template
+# Copy to runs/<run_name>/config.yaml and fill in the paths below.
+# Running: snakemake --configfile runs/run_name/config.yaml --cores all
+# =============================================================================
+
+# Path to directory of per-genome Bakta .gb folders (one subdir per genome)
+raw_dir: ""
+
+# File extension of genome files (gb or gbff)
+gb_ext: gb
+
+# Path to KofamScan database dir (must contain profiles/ and ko_list)
+kofam_db: "~/db/kofam"
+kofamscan_cpus: 4
+
+# Sourmash GTDB database and lineages CSV for taxonomy
+sourmash_db: "~/db/sourmash/gtdb-rs214-reps.k31.zip"
+sourmash_lineages: "~/db/sourmash/taxonomy/gtdb-rs214.lineages.csv"
+
+# Output directory. Leave as null to auto-use the folder this config lives in.
+# Set to a custom path to override (e.g. output_dir: "/data/my_results")
+output_dir: null
+
+num_workers: 4
+min_annotations_per_genome: 10
+min_genomes_per_annotation: 1
+
+kegg_genes_file: "data/kegg_genes.csv"
+pathway_definitions_file: "data/pathway_definitions.csv"
+
+# --- Post-processing (optional) ----------------------------------------------
+
+# Export pathway + gene tables to Excel
+run_summary: true
+
+# Plot KO presence grid after summary (requires summary.xlsx)
+run_plot: false
+
+# Plot title
+plot_title: "Pathway KO Presence Grid"
+
+# Output format: pdf or png
+plot_format: pdf
+
+# Pathways to exclude from the KO grid (comma-separated)
+plot_ignore_pathways: ""
+
+# Include pathways absent in every genome
+plot_include_empty: false
+
+# Show gene names from kegg_genes.csv instead of KO IDs
+plot_show_names: false
