@@ -14,4 +14,4 @@ dependencies:
     - snakemake>=9.16.3
     - tables
     - tqdm>=4.67.3
-    - sourmash
+    - sourmash=4.9.4
