@@ -2,18 +2,16 @@ name: isolate_informatics
 channels:
   - bioconda
   - conda-forge
-  - defaults
 dependencies:
   - kofamscan
-  - pip
   - pip:
-  - biopython>=1.87
-  - h5py>=3.15.1
-  - joblib>=1.5.3
-  - openpyxl>=3.1.5
-  - pandas>=3.0.0
-  - seaborn>=0.13.2
-  - snakemake>=9.16.3
-  - tables
-  - tqdm>=4.67.3
-  - sourmash
+    - biopython>=1.87
+    - h5py>=3.15.1
+    - joblib>=1.5.3
+    - openpyxl>=3.1.5
+    - pandas>=3.0.0
+    - seaborn>=0.13.2
+    - snakemake>=9.16.3
+    - tables
+    - tqdm>=4.67.3
+    - sourmash
