@@ -173,6 +173,39 @@ def expected_pathways_for(species_label, species_map):
     return set()
 
 
+# Ranks to fall back through, above species, in order from most to least specific.
+_FALLBACK_RANKS = ['g', 'f', 'o', 'c', 'p', 'd']
+
+
+def _parse_lineage_ranks(full_lineage):
+    """dict rank-letter -> value, parsed from a 'd__..;p__..;...;s__..' string."""
+    ranks = {}
+    for token in str(full_lineage or '').split(';'):
+        prefix, sep, value = token.partition('__')
+        prefix = prefix.strip()
+        if sep and prefix in ('d', 'p', 'c', 'o', 'f', 'g', 's'):
+            ranks[prefix] = value.strip()
+    return ranks
+
+
+def resolve_display_label(species, full_lineage, genome_id):
+    """
+    Species name if resolved; otherwise the deepest resolved rank above species
+    (genus, family, order, ...), prefixed with its rank letter (e.g.
+    'g__Pseudomonas_E') so the reader knows which taxonomic level is shown.
+    Falls back to genome_id if nothing in the lineage is resolved.
+    """
+    species_clean = re.sub(r'^s__', '', str(species or '')).strip()
+    if species_clean and species_clean.lower() != 'unknown':
+        return species_clean
+    ranks = _parse_lineage_ranks(full_lineage)
+    for rank in _FALLBACK_RANKS:
+        value = ranks.get(rank, '')
+        if value:
+            return f"{rank}__{value}"
+    return genome_id
+
+
 # ─────────────────────────── load inputs ─────────────────────────────────────
 
 def load_ko_names(path):
@@ -204,20 +237,25 @@ def load_summary(summary_path):
     """
     Reads the 'Genes' sheet from summary.xlsx.
 
-    Sheet layout (one row per genome):
-      col 0 : genome_id
-      col 1 : species label
-      col 2 : genus
-      col 3 : family
-      col 4 : full_lineage
-      col 5+: pathway KO hits (comma-separated KO IDs or 'None')
+    Sheet layout (MultiIndex columns, two header rows):
+      Row 0 : level-0 — None (genome index col), phylo col names, pathway names (repeated)
+      Row 1 : level-1 — "genome" (index name), "" for phylo cols, KO IDs
+      Row 2+: data    — genome_id, phylo values, True/False per KO
+
+    col 0 : genome_id (written as DataFrame index)
+    col 1 : species label
+    col 2 : genus
+    col 3 : family
+    col 4 : full_lineage
+    col 5+: one column per KO per pathway, True/False
 
     Returns
     -------
     genomes        : list of genome IDs in row order
     species_labels : {genome_id: species_label}
+    lineages       : {genome_id: full_lineage_string}
     ko_hits        : {(genome_id, pathway): set of KO strings present}
-    pathway_cols   : ordered list of pathway names (from header)
+    pathway_cols   : ordered list of unique pathway names (first-occurrence order)
     """
     wb = openpyxl.load_workbook(summary_path, read_only=True, data_only=True)
     if 'Genes' not in wb.sheetnames:
@@ -227,35 +265,59 @@ def load_summary(summary_path):
     rows = list(ws.iter_rows(values_only=True))
     wb.close()
 
-    if not rows:
-        raise ValueError("Genes sheet is empty.")
+    if len(rows) < 3:
+        raise ValueError("Genes sheet is missing headers or data.")
 
-    header = rows[0]
-    # Columns 0-4 are genome/taxonomy fields; 5+ are pathway columns
-    META_COLS = 5
-    pathway_cols = [str(h).strip() for h in header[META_COLS:] if h is not None]
+    header0 = rows[0]  # pathway names (repeated per KO, not merged)
+    header1 = rows[1]  # KO IDs
+
+    META_COLS = 5  # genome (index col 0), species, genus, family, full_lineage
+
+    # Build (pathway, ko) list for all data columns (5+)
+    pathway_ko_cols = []
+    last_pathway = None
+    for i in range(META_COLS, len(header0)):
+        h0 = header0[i]
+        h1 = header1[i] if i < len(header1) else None
+        # Forward-fill pathway name in case of merged cells
+        if h0 is not None and str(h0).strip():
+            last_pathway = str(h0).strip()
+        ko = str(h1).strip() if h1 is not None and str(h1).strip() else ''
+        pathway_ko_cols.append((last_pathway or '', ko))
 
     genomes = []
     species_labels = {}
+    lineages = {}
     ko_hits = {}
 
-    for row in rows[1:]:
+    for row in rows[2:]:
         if not row or row[0] is None:
             continue
         genome_id = str(row[0]).strip()
-        species = str(row[1]).strip() if row[1] else genome_id
+        species = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ''
+        full_lineage = str(row[4]).strip() if len(row) > 4 and row[4] is not None else ''
         genomes.append(genome_id)
         species_labels[genome_id] = species
+        lineages[genome_id] = full_lineage
 
-        for i, pathway in enumerate(pathway_cols):
-            cell = row[META_COLS + i]
-            val = str(cell).strip() if cell else ''
-            kos = set()
-            if val and val.lower() != 'none':
-                kos = {k.strip() for k in val.split(',') if k.strip().startswith('K')}
-            ko_hits[(genome_id, pathway)] = kos
+        for i, (pathway, ko) in enumerate(pathway_ko_cols):
+            if not pathway or not ko:
+                continue
+            col_idx = META_COLS + i
+            cell = row[col_idx] if col_idx < len(row) else None
+            if bool(cell):
+                ko_hits.setdefault((genome_id, pathway), set()).add(ko)
+            else:
+                ko_hits.setdefault((genome_id, pathway), set())
 
-    return genomes, species_labels, ko_hits, pathway_cols
+    # Unique pathway order (preserving first-occurrence order)
+    seen, pathway_order = set(), []
+    for pathway, _ in pathway_ko_cols:
+        if pathway and pathway not in seen:
+            pathway_order.append(pathway)
+            seen.add(pathway)
+
+    return genomes, species_labels, lineages, ko_hits, pathway_order
 
 
 # Pathways always excluded from the plot regardless of data
@@ -268,7 +330,7 @@ PRESENT     = 1
 MISSING_EXP = 2
 
 
-def build_grid(genomes, species_labels, ko_hits, pathway_defs,
+def build_grid(genomes, species_labels, lineages, ko_hits, pathway_defs,
                species_map, expected_pathway_order):
     """
     Returns
@@ -293,8 +355,7 @@ def build_grid(genomes, species_labels, ko_hits, pathway_defs,
 
     for r, gid in enumerate(genomes):
         sp = species_labels.get(gid, gid)
-        # Clean up display label
-        label = re.sub(r'^s__', '', sp).strip()
+        label = resolve_display_label(sp, lineages.get(gid, ''), gid)
         row_labels.append(label)
 
         expected = expected_pathways_for(sp, species_map)
@@ -330,6 +391,31 @@ _PALETTE = [
     '#c49c94', '#dbdb8d', '#9edae5', '#ff9896', '#c7c7c7',
 ]
 
+# Fixed color per pathway (canonical order from pathway_definitions.csv).
+# Any pathway not listed here falls back to _PALETTE by insertion order.
+_PATHWAY_COLORS = {
+    'CBB':                        '#2ca02c',
+    'rTCA':                       '#ff7f0e',
+    'WL':                         '#1f77b4',
+    '3HP':                        '#9467bd',
+    '3HP/4HB':                    '#8c564b',
+    'DC/4HB':                     '#e377c2',
+    'H2 oxidation':               '#d62728',
+    'sulfide oxidation':          '#17becf',
+    'sulfite oxidation':          '#bcbd22',
+    'CO oxidation':               '#7f7f7f',
+    'ammonia oxidation':          '#aec7e8',
+    'formate oxidation':          '#ffbb78',
+    'methanol oxidation':         '#98df8a',
+    'oxygen reduction':           '#f7b6d2',
+    'nitrate reduction':          '#c5b0d5',
+    'thiosulfate reduction':      '#c49c94',
+    'N2 fixation':                '#dbdb8d',
+    'Serine Cycle':               '#9edae5',
+    'Reductive Glycine Pathway':  '#ff9896',
+    'RuMP':                       '#c7c7c7',
+}
+
 
 def plot_grid(ko_columns, matrix, row_labels, title, output_path, ko_names=None):
     n_rows, n_cols = matrix.shape
@@ -340,7 +426,9 @@ def plot_grid(ko_columns, matrix, row_labels, title, output_path, ko_names=None)
         if pw not in seen:
             pathway_order.append(pw)
             seen.add(pw)
-    pw_color = {p: _PALETTE[i % len(_PALETTE)] for i, p in enumerate(pathway_order)}
+    # Use fixed colors; fall back to _PALETTE for any unknown pathway
+    _fallback = iter(c for c in _PALETTE if c not in _PATHWAY_COLORS.values())
+    pw_color = {p: _PATHWAY_COLORS.get(p) or next(_fallback) for p in pathway_order}
 
     # Geometry
     cell_w  = 1.1   # wider than tall so rotated labels have more horizontal room
@@ -533,7 +621,7 @@ def main():
     expected_pathway_order = [p for p in pathway_defs if p in all_expected]
 
     print("Loading summary Excel ...")
-    genomes, species_labels, ko_hits, _ = load_summary(args.summary)
+    genomes, species_labels, lineages, ko_hits, _ = load_summary(args.summary)
     print(f"  {len(genomes)} genomes")
 
     # Auto-ignore pathways absent in all genomes, plus defaults and user-specified
@@ -549,12 +637,17 @@ def main():
     print(f"  Pathways shown ({len(expected_pathway_order)}): "
           f"{', '.join(expected_pathway_order)}")
 
-    # Sort genomes alphabetically by species label
-    genomes = sorted(genomes, key=lambda g: re.sub(r'^s__', '', species_labels.get(g, g)).lower())
+    # Sort genomes alphabetically by display label (species, or fallback rank)
+    genomes = sorted(
+        genomes,
+        key=lambda g: resolve_display_label(
+            species_labels.get(g, g), lineages.get(g, ''), g
+        ).lower()
+    )
 
     print("Building grid ...")
     ko_columns, matrix, row_labels = build_grid(
-        genomes, species_labels, ko_hits,
+        genomes, species_labels, lineages, ko_hits,
         pathway_defs, species_map, expected_pathway_order
     )
     print(f"  Grid: {len(genomes)} genomes × {len(ko_columns)} KOs")

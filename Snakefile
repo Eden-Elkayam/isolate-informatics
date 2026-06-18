@@ -45,6 +45,12 @@ config.setdefault("plot_ignore_pathways", "")
 config.setdefault("plot_include_empty", False)
 config.setdefault("plot_show_names", False)
 
+# ── Input mode ─────────────────────────────────────────────────────────────────
+FNA_MODE = config["gb_ext"] == "fna"
+FAA_MODE = config["gb_ext"] == "faa"
+# Taxonomy requires nucleotide sequences; available in Bakta and FNA modes.
+config.setdefault("run_taxonomy", not FAA_MODE)
+
 # ── Paths ──────────────────────────────────────────────────────────────────────
 RAW_DIR = Path(config["raw_dir"]).expanduser()
 OUTPUT_DIR = Path(config["output_dir"])
@@ -53,11 +59,9 @@ PATHWAY_DEFINITIONS_FILE = Path(config["pathway_definitions_file"]) if config["p
 
 KEGG_DIR = OUTPUT_DIR / "kegg"
 MERGED_DIR = KEGG_DIR / "merged"
-FAA_DIR = KEGG_DIR / "faa"
 BAKTA_INPUT_DIR = KEGG_DIR / "bakta_input"
 KO_DIR = KEGG_DIR / "kofamscan"
 KOFAMSCAN_INPUT_DIR = KEGG_DIR / "kofamscan_input"
-C1_INPUT_DIR = KEGG_DIR / "c1_input"
 
 PHYLO_DIR = OUTPUT_DIR / "phylogeny"
 FNA_DIR = PHYLO_DIR / "fna"
@@ -73,8 +77,23 @@ PATHWAY_MATRIX_FILE = PATHWAY_DIR / "pathway_presence_matrix.h5"
 SUMMARY_XLSX = OUTPUT_DIR / "summary.xlsx"
 KO_GRID_FILE = OUTPUT_DIR / f"ko_grid.{config['plot_format']}"
 
-# Discover genomes from raw_dir subdirectories at parse time
-GENOMES = sorted(f"{d.name}.merged" for d in RAW_DIR.iterdir() if d.is_dir()) if RAW_DIR.exists() else []
+if FNA_MODE:
+    # raw_dir is a flat directory of assembled .fna genomes.
+    # Prodigal predicts proteins; .fna files are used directly for taxonomy.
+    FAA_DIR = KEGG_DIR / "faa"
+    GENOMES = sorted(f.stem for f in RAW_DIR.glob("*.fna")) if RAW_DIR.exists() else []
+    C1_INPUT_DIR = KOFAMSCAN_INPUT_DIR
+elif FAA_MODE:
+    # raw_dir is a flat directory of pre-computed prodigal .faa files.
+    # Genome IDs are file stems (e.g. "2445.fa" from "2445.fa.faa").
+    FAA_DIR = RAW_DIR
+    GENOMES = sorted(f.stem for f in RAW_DIR.glob("*.faa")) if RAW_DIR.exists() else []
+    C1_INPUT_DIR = KOFAMSCAN_INPUT_DIR
+else:
+    # Bakta mode: FAA files are extracted from merged .gb files.
+    FAA_DIR = KEGG_DIR / "faa"
+    GENOMES = sorted(f"{d.name}.merged" for d in RAW_DIR.iterdir() if d.is_dir()) if RAW_DIR.exists() else []
+    C1_INPUT_DIR = KEGG_DIR / "c1_input"
 
 
 # ── Validation ─────────────────────────────────────────────────────────────────
@@ -107,7 +126,7 @@ def build_ignore_args():
 rule all:
     input:
         str(C1_INPUT_DIR),
-        str(TAXONOMY_SUMMARY),
+        str(TAXONOMY_SUMMARY) if config.get("run_taxonomy") else [],
         MATRIX_FILE,
         PATHWAY_DIR / "annotations_per_genome_histogram.png",
         PATHWAY_DIR / "genomes_per_kegg_histogram.png",
@@ -149,14 +168,24 @@ rule extract_bakta_kegg:
         "{PYTHON} scripts/bakta_to_pipeline_input.py --input-dir {input} --output-dir {output}"
 
 
+if FNA_MODE:
+    rule prodigal:
+        """Predict protein-coding genes from an assembled genome using Prodigal."""
+        input:
+            fna=str(RAW_DIR / "{genome}.fna"),
+        output:
+            faa=str(FAA_DIR / "{genome}.faa"),
+        shell:
+            "prodigal -i {input.fna} -a {output.faa} -p single -f gff -o /dev/null"
+
+
 rule kofamscan:
     """Assign KEGG KOs to one genome via KofamScan."""
     input:
-        faa_dir=FAA_DIR,
+        faa=str(FAA_DIR / "{genome}.faa"),
     output:
         tsv=str(KO_DIR / "{genome}.ko.tsv"),
     params:
-        faa=str(FAA_DIR / "{genome}.faa"),
         profiles=str(Path(config["kofam_db"]).expanduser() / "profiles"),
         ko_list=str(Path(config["kofam_db"]).expanduser() / "ko_list"),
         cpus=config["kofamscan_cpus"],
@@ -170,7 +199,7 @@ rule kofamscan:
             -f detail-tsv \
             --tmp-dir {params.tmp_dir} \
             -o {output.tsv} \
-            {params.faa}
+            {input.faa}
         rm -rf {params.tmp_dir}
         """
 
@@ -226,7 +255,8 @@ rule extract_nucleotides:
 rule sourmash_taxonomy:
     """Identify GTDB species for each genome via Sourmash + GTDB database."""
     input:
-        FNA_DIR,
+        # FNA mode: assembled .fna files are in raw_dir; no extraction needed.
+        RAW_DIR if FNA_MODE else FNA_DIR,
     output:
         lineage=str(TAXONOMY_DIR / "gtdb_taxonomy.lineage.csv"),
         summary=str(TAXONOMY_SUMMARY),
@@ -342,16 +372,17 @@ rule export_excel:
     input:
         pathway_matrix=PATHWAY_MATRIX_FILE,
         gene_matrix=FILTERED_MATRIX_FILE if KEGG_GENES_FILE else [],
-        taxonomy=str(TAXONOMY_SUMMARY),
+        taxonomy=[str(TAXONOMY_SUMMARY)] if config.get("run_taxonomy") else [],
     output:
         xlsx=SUMMARY_XLSX,
     params:
         output_dir=str(PATHWAY_DIR),
+        taxonomy_arg=f"--taxonomy {TAXONOMY_SUMMARY}" if config.get("run_taxonomy") else "",
     shell:
         """
         {PYTHON} scripts/export_excel.py \
             --output-dir {params.output_dir} \
-            --taxonomy {input.taxonomy} \
+            {params.taxonomy_arg} \
             --output {output.xlsx}
         """
 

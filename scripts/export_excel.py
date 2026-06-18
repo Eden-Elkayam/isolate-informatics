@@ -68,7 +68,13 @@ def build_pathways_df(genomes, pathways, presence, tax_df):
     return pd.concat([phylo, pathway_df], axis=1)
 
 
-def build_genes_df(genomes, pathways, gene_df, tax_df):
+def write_genes_sheet(writer, genomes, pathways, gene_df, tax_df):
+    """
+    Write the Genes sheet directly via openpyxl with explicit two-row headers:
+      Row 1 : "genome", phylo col names, then pathway name repeated once per KO
+      Row 2 : empty for genome/phylo cols, KO ID for each data column
+      Row 3+: genome_id, phylo values, True/False per KO
+    """
     defs = pd.read_csv(PATHWAY_DEFS)
     pathway_col = defs.columns[0]
     expr_col    = defs.columns[2]
@@ -78,18 +84,45 @@ def build_genes_df(genomes, pathways, gene_df, tax_df):
         kos = re.findall(r"K\d{5}", str(row[expr_col]))
         pathway_genes[row[pathway_col]] = kos
 
-    records = []
-    for genome in genomes:
-        row = {}
-        for pathway in pathways:
-            kos   = pathway_genes.get(pathway, [])
-            found = [ko for ko in kos if ko in gene_df.index and gene_df.loc[ko, genome] > 0]
-            row[pathway] = ", ".join(found) if found else "None"
-        records.append(row)
+    ko_columns = []  # [(pathway, ko), ...]
+    for pathway in pathways:
+        for ko in pathway_genes.get(pathway, []):
+            ko_columns.append((pathway, ko))
 
-    genes_df = pd.DataFrame(records, index=genomes)
-    phylo    = build_phylo_prefix(genomes, tax_df)
-    return pd.concat([phylo, genes_df], axis=1)
+    META = 1 + len(PHYLO_COLS)  # genome col + phylo cols
+
+    ws = writer.book.create_sheet("Genes")
+
+    # Row 1: genome, phylo names, pathway name repeated per KO column
+    ws.cell(row=1, column=1, value="genome")
+    for i, col in enumerate(PHYLO_COLS):
+        ws.cell(row=1, column=2 + i, value=col)
+    for i, (pathway, _) in enumerate(ko_columns):
+        ws.cell(row=1, column=META + 1 + i, value=pathway)
+
+    # Row 2: KO IDs (genome/phylo cols left blank)
+    for i, (_, ko) in enumerate(ko_columns):
+        ws.cell(row=2, column=META + 1 + i, value=ko)
+
+    # Data rows (row 3+)
+    for r, genome in enumerate(genomes):
+        if genome in tax_df.index:
+            phylo_vals = [tax_df.loc[genome, col] for col in PHYLO_COLS]
+        else:
+            phylo_vals = ["unknown"] * len(PHYLO_COLS)
+
+        ws.cell(row=3 + r, column=1, value=genome)
+        for i, val in enumerate(phylo_vals):
+            ws.cell(row=3 + r, column=2 + i, value=val)
+        for i, (pathway, ko) in enumerate(ko_columns):
+            present = (
+                ko in gene_df.index
+                and genome in gene_df.columns
+                and gene_df.loc[ko, genome] > 0
+            )
+            ws.cell(row=3 + r, column=META + 1 + i, value=int(present))
+
+    return ko_columns
 
 
 def main():
@@ -126,22 +159,17 @@ def main():
     pathways_sheet.index.name = "genome"
     pathways_sheet = pathways_sheet.reset_index()
 
-    # Sheet 3: Genes (genomes as rows)
-    genes_sheet = build_genes_df(genomes, pathways, gene_df, tax_df)
-    genes_sheet.index.name = "genome"
-    genes_sheet = genes_sheet.reset_index()
-
-    # Write Excel
+    # Write Excel — Phylogeny and Pathways via pandas; Genes via openpyxl directly
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     with pd.ExcelWriter(args.output, engine="openpyxl") as writer:
         phylo_sheet.to_excel(writer,    sheet_name="Phylogeny", index=False)
         pathways_sheet.to_excel(writer, sheet_name="Pathways",  index=False)
-        genes_sheet.to_excel(writer,    sheet_name="Genes",     index=False)
+        ko_columns = write_genes_sheet(writer, genomes, pathways, gene_df, tax_df)
 
     print(f"Saved: {args.output}")
     print(f"  Sheet 1 — Phylogeny : {len(phylo_sheet)} genome(s)")
     print(f"  Sheet 2 — Pathways  : {len(pathways_sheet)} genome(s) x {len(pathways)} pathways")
-    print(f"  Sheet 3 — Genes     : {len(genes_sheet)} genome(s) x {len(pathways)} pathways")
+    print(f"  Sheet 3 — Genes     : {len(genomes)} genome(s) x {len(ko_columns)} KO columns ({len(pathways)} pathways)")
 
 
 if __name__ == "__main__":

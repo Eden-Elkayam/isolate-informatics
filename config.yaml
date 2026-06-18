@@ -7,7 +7,10 @@
 # Path to directory of per-genome Bakta .gb folders (one subdir per genome)
 raw_dir: ""
 
-# File extension of genome files (gb or gbff)
+# File extension of genome files:
+#   gb / gbff  — Bakta-annotated GenBank files (raw_dir contains one subdir per genome)
+#   fna        — assembled genome FASTAs (raw_dir is a flat dir; Prodigal runs first)
+#   faa        — pre-computed prodigal protein FASTAs (raw_dir is a flat dir of .faa files)
 gb_ext: gb
 
 # Path to KofamScan database dir (must contain profiles/ and ko_list)
